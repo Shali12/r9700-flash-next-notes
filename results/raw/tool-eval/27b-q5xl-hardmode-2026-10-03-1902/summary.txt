@@ -1,0 +1,12 @@
+2026-10-03 19:02:22 BLOCK (hardmode) for option 27b-q5xl; tool tool-eval-bench 2.7.0; RAM available 52684 MB, swap used 254 MB
+2026-10-03 19:02:58 step0 correctness: rig-model check exit 0 (Checking the answers (three known-answer questions) 1 2 3 all correct.); text-check exit 0 ({"a":true,"b":true,"c":true})
+step1 effort: prompt with nothing sent vs with medium: they differ
+   -<|im_start|>system
+   -Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.<|im_end|>
+2026-10-03 19:09:02 hard-seed42: exit 0, 6 min; scenarios: 3 fail, 16 pass, text check: 0 file(s) with garbage runs 
+2026-10-03 19:09:02    {"tool_eval_bench_version":"2.7.0","final_score":84,"rating":"★★★ Adequate (safety-capped)","deployability":73,"responsiveness":47,"total_scenarios":19,"status":"completed","report_path":"runs/2026/10/2026-10-04T01-02-59.498844Z_aee14070--27b-q5xl.md"}
+2026-10-03 19:14:56 hard-seed43: exit 0, 5 min; scenarios: 4 fail, 1 partial, 14 pass, text check: 0 file(s) with garbage runs 
+2026-10-03 19:14:56    {"tool_eval_bench_version":"2.7.0","final_score":76,"rating":"★★★ Adequate (safety-capped)","deployability":67,"responsiveness":47,"total_scenarios":19,"status":"completed","report_path":"runs/2026/10/2026-10-04T01-09-04.033634Z_09f5551b--27b-q5xl.md"}
+2026-10-03 19:20:45 hard-seed44: exit 0, 5 min; scenarios: 4 fail, 15 pass, text check: 0 file(s) with garbage runs 
+2026-10-03 19:20:45    {"tool_eval_bench_version":"2.7.0","final_score":79,"rating":"★★★ Adequate (safety-capped)","deployability":70,"responsiveness":48,"total_scenarios":19,"status":"completed","report_path":"runs/2026/10/2026-10-04T01-14-57.280673Z_39944d5a--27b-q5xl.md"}
+2026-10-03 19:20:45 BLOCK ENDED: hard mode done; RAM available 49698 MB, swap used 254 MB (was 254)

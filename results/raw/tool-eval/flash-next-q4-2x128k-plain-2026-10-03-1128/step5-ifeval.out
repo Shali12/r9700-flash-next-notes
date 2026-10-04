@@ -1,0 +1,16 @@
+
+╭──────────────── 📋 IFEval — Instruction Following Evaluation ────────────────╮
+│ qwen3.8_local                                                                │
+│ 100 prompts · 25 constraint types                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  Loading IFEval from cache… ✓ 541 prompts
+  ✓ Complete ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 100/100 • 0:46:38 eta 0:00:00
+  ✓ 84  ✗ 16  │  84.0% prompt  89.6% instr  │  2.1 p/min
+ 
+  IFEval Prompt Accuracy: 84.0% (84/100)
+  IFEval Instruction Accuracy: 89.6% (146/163)
+  Rating: ★★★★ Good
+  Duration: 2798.7s · Tokens: 108,148
+
+  Report saved to runs/
+

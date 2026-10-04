@@ -1,0 +1,259 @@
+#!/bin/bash
+# rig-model: choose which model option the llama-server service runs.
+#
+#   rig-model              list the options; shows which is chosen and which is running
+#   rig-model NAME         switch to NAME: restarts the server (asks for your sudo password), waits
+#                          until it answers, then prints GPU memory and the Hermes settings to match
+#   rig-model show NAME    print one option's settings and its exact server command; changes nothing
+#   rig-model -y NAME      switch without the "are you sure?" questions
+#   rig-model check        ask the running server three known-answer questions; changes nothing
+#   rig-model --no-check NAME   switch without the known-answer check (emergencies only)
+#
+# The options are the .conf files in ~/model-options. To add one, copy an existing file to a new
+# name and edit the copy. If a new option fails to start, or starts but answers the known-answer
+# questions wrongly (for example with "////" garbage), this script puts the previous one back.
+# An option may also set BUILD (another llama.cpp folder) and ENVS=(NAME=value ...).
+
+OPTIONS=~/model-options
+START=~/start-server.sh
+GPU=/sys/bus/pci/devices/0000:03:00.0     # the R9700 (the same path ~/gpu-log.sh reads)
+URL=${RIG_MODEL_URL:-"http://$(tailscale ip -4 2>/dev/null):8080"}      # RIG_MODEL_URL: only for testing the check
+WAIT=300                                  # seconds to wait for a model to load
+
+names()  { for f in "$OPTIONS"/*.conf; do [ -e "$f" ] && basename "$f" .conf; done; }
+chosen() { cat "$OPTIONS/current" 2>/dev/null; }
+
+# get NAME VARIABLE: one value from an option file (read in a subshell, so options never mix)
+get()    { ( source "$OPTIONS/$1.conf" 2>/dev/null; echo "${!2}" ); }
+each()   { echo $(( $(get "$1" CTX) / $(get "$1" SLOTS) )); }
+
+usage() { sed -n '2,15s/^# \{0,1\}//p' "$0"; }
+
+# check NAME: is this option safe to start? Prints what is wrong, if anything.
+check() {
+  local f="$OPTIONS/$1.conf" out
+  [ -f "$f" ] || { echo "No option called '$1'. The options are: $(names | paste -sd' ')"; return 1; }
+  out=$(bash -n "$f" 2>&1) || { echo "The option file $f has a typo:"; echo "$out"; return 1; }
+  (
+    source "$f"
+    [[ $SLOTS =~ ^[1-9][0-9]*$ && $CTX =~ ^[1-9][0-9]*$ && $HERMES_CONTEXT =~ ^[1-9][0-9]*$ ]] &&
+      [ -n "$LABEL" ] && [ "${#ARGS[@]}" -gt 0 ] ||
+      { echo "$f must set LABEL, SLOTS, CTX, HERMES_CONTEXT and ARGS."; exit 1; }
+    [ "$HERMES_CONTEXT" -lt $(( CTX / SLOTS )) ] ||
+      { echo "$f: HERMES_CONTEXT ($HERMES_CONTEXT) must be below CTX / SLOTS ($(( CTX / SLOTS )))."; exit 1; }
+    for a in "${ARGS[@]}"; do
+      case $a in
+        *.gguf) [ -f "$a" ] || { echo "$f: file not found: $a   (compare with: ls ~/models)"; exit 1; } ;;
+        --alias|--host|--port|--metrics)
+          echo "$f: remove $a from ARGS; ~/start-server.sh sets it for every option."; exit 1 ;;
+      esac
+    done
+    [ -x "${BUILD:-$HOME/llama.cpp-rdna}/build/bin/llama-server" ] ||
+      { echo "$f: no llama-server found in the build folder ${BUILD:-$HOME/llama.cpp-rdna}"; exit 1; }
+  )
+}
+
+# running: the name of the option whose flags match the live llama-server process exactly
+running() {
+  local pid n
+  pid=$(pgrep -x llama-server | head -1)
+  [ -n "$pid" ] || { echo "(server not running)"; return; }
+  for n in $(names); do
+    if diff -q <(tr '\0' '\n' < "/proc/$pid/cmdline" | sort) <("$START" --print "$n" 2>/dev/null | sort) >/dev/null; then
+      echo "$n"; return
+    fi
+  done
+  echo "(settings that match no option)"
+}
+
+list() {
+  local cur run n mark
+  cur=$(chosen); run=$(running)
+  echo
+  printf "  %-20s %-19s %6s  %11s  %21s  %s\n" NAME MODEL AGENTS "TOKENS EACH" "HERMES context_length" STATUS
+  for n in $(names); do
+    mark=" "; [ "$n" = "$cur" ] && mark="*"
+    if check "$n" >/dev/null; then
+      printf "%s %-20s %-19s %6s  %'11d  %21s  %s\n" "$mark" "$n" "$(get "$n" LABEL)" "$(get "$n" SLOTS)" \
+        "$(each "$n")" "$(get "$n" HERMES_CONTEXT)" "$(get "$n" STATUS)"
+    else
+      printf "%s %-20s %s\n" "$mark" "$n" "(problem in this file: rig-model show $n)"
+    fi
+  done
+  echo
+  echo "* = chosen (used at the next start): ${cur:-none}.   Running now: $run."
+  if [ "$run" != "$cur" ]; then
+    echo "The chosen option is not the one running. To make it so: rig-model ${cur:-NAME}"
+  fi
+  echo "Switch with: rig-model NAME      Preview with: rig-model show NAME"
+  echo
+}
+
+# hermes NEW [OLD]: the Hermes settings that go with option NEW (and whether they differ from OLD)
+hermes() {
+  local new=$1 old=$2 s c
+  s=$(get "$new" SLOTS); c=$(get "$new" HERMES_CONTEXT)
+  echo
+  if [ -n "$old" ] && [ "$s" = "$(get "$old" SLOTS)" ] && [ "$c" = "$(get "$old" HERMES_CONTEXT)" ]; then
+    echo "Hermes: nothing to change (same number of agents and same context as $old)."
+    return
+  fi
+  echo "Hermes settings that go with $new (on the mini PC; the model name qwen3.8_local stays):"
+  printf "  %-30s %s\n" "context_length: $c" "Hermes\\profiles\\rigworker\\config.yaml, model: block (and any other profile using qwen3.8_local)"
+  printf "  %-30s %s\n" "max_concurrent_children: $s" "Hermes\\profiles\\rigsetup_true\\config.yaml, delegation: block"
+  printf "  %-30s %s\n" "playbook token number: $(printf "%'d" "$c")" "Hermes\\profiles\\rigsetup_true\\SOUL.md: \"Each worker holds about $(printf "%'d" "$c") tokens\""
+  printf "  %-30s %s\n" "playbook task limit: $s" "same file: \"Delegate at most $s task(s) at a time\" and the worker count in its first line"
+  echo "Then start a new Hermes session (/new)."
+}
+
+show() {
+  local n=$1
+  echo
+  echo "$n: $(get "$n" LABEL), $(get "$n" SLOTS) agent(s) x $(printf "%'d" "$(each "$n")") tokens, status: $(get "$n" STATUS)"
+  grep '^#' "$OPTIONS/$n.conf" | sed -n '1,/^# No backslashes/p' | grep -v '^# No backslashes' | sed 's/^# \{0,1\}/  /'
+  ( source "$OPTIONS/$n.conf"; echo "Build folder: ${BUILD:-$HOME/llama.cpp-rdna}${ENVS:+   Environment: ${ENVS[*]}}" )
+  echo "Server command:"
+  echo "  HIP_VISIBLE_DEVICES=0 $("$START" --print "$n" | paste -sd' ')"
+  hermes "$n"
+  echo
+}
+
+confirm() {
+  [ -n "$YES" ] && return 0
+  [ -t 0 ] || { echo "$1 (No terminal to ask on; add -y to go ahead anyway.)"; return 1; }
+  local a; read -r -p "$1 [y/N] " a
+  [[ $a == [yY]* ]]
+}
+
+# wait_ready: true once the server answers; false if it keeps crashing or takes longer than WAIT
+# seconds. One crash is forgiven: systemd retries by itself after 15 s, and a first try can fail
+# just because the previous server's GPU memory was not released yet.
+# DOWN_SINCE is set just before the restart, so the time printed is the whole gap Hermes sees.
+wait_ready() {
+  local t0=$SECONDS
+  while [ $((SECONDS - t0)) -lt "$WAIT" ]; do
+    if curl -sf -m 3 "$URL/health" >/dev/null; then
+      echo " ready. The server was down for about $((SECONDS - DOWN_SINCE))s."; return 0
+    fi
+    if [ "$(systemctl is-active llama-server)" = failed ] ||
+       [ "$(systemctl show llama-server -p NRestarts --value)" -ge $((RETRIES_BEFORE + 2)) ]; then
+      echo " the server keeps stopping."; return 1
+    fi
+    printf "."; sleep 2
+  done
+  echo " no answer after ${WAIT}s."; return 1
+}
+
+# answer_check: does the server give correct, readable chat answers? A model can load, answer
+# /health and still write garbage (found 2026-10-01: Flash-Next wrote "////////" at full speed).
+# Three questions, each a small lookup in a list sent as a chat request, each with a different
+# right answer. Three, because the broken setup answered the FIRST request after loading correctly
+# and wrote garbage from the second on. Passes only if all three numbers come back, with no garbage.
+ANSWER_CHECK_OUT=/tmp/rig-model-answer-check.json
+answer_check() {
+  local facts body text squeezed i word want
+  facts=$(for i in $(seq 1 40); do echo "Item $i: the code for word$i is $((1000 + i * 37))."; done)
+  printf "Checking the answers (three known-answer questions) "
+  for i in 1 2 3; do
+    case $i in 1) word=maple; want=7391 ;; 2) word=word17; want=1629 ;; 3) word=word33; want=2221 ;; esac
+    body=$(jq -n --arg f "$facts" --arg w "$word" '{model: "qwen3.8_local", max_tokens: 400, temperature: 0, seed: 42,
+      cache_prompt: false, reasoning_effort: "low",
+      messages: [{role: "user", content: ("Here is a list.\n" + $f + "\nItem 41: the code for maple is 7391.\n\nWhat is the code for " + $w + "? Reply with the number only.")}]}')
+    if ! curl -s -m 240 "$URL/v1/chat/completions" -H "Content-Type: application/json" -d "$body" > "$ANSWER_CHECK_OUT"; then
+      echo " no reply to question $i."; return 1
+    fi
+    text=$(jq -r '(.choices[0].message.reasoning_content // "") + " " + (.choices[0].message.content // "")' "$ANSWER_CHECK_OUT" 2>/dev/null)
+    squeezed=$(printf %s "$text" | tr -s '[:graph:]')        # the text with repeated characters collapsed
+    if grep -q -F '////' <<<"$text" || { [ ${#text} -gt 100 ] && [ $(( ${#squeezed} * 2 )) -lt ${#text} ]; }; then
+      echo " FAILED on question $i: the reply is garbage: $(head -c 50 <<<"$text")"; return 1
+    fi
+    if ! grep -q "$want" <<<"$text"; then
+      echo " FAILED on question $i: expected $want, got: $(tr '\n' ' ' <<<"$text" | head -c 120)"; return 1
+    fi
+    printf "$i "
+  done
+  echo "all correct."
+}
+
+# restart: restart the service into whatever ~/model-options/current names
+restart() {
+  printf "Restarting and loading the model "
+  DOWN_SINCE=$SECONDS
+  sudo systemctl restart llama-server || return 1
+  RETRIES_BEFORE=$(systemctl show llama-server -p NRestarts --value)   # systemd's count of automatic retries
+  wait_ready
+}
+
+report() {
+  local new=$1 old=$2 props used total free
+  props=$(curl -s -m 5 "$URL/props")
+  used=$(( $(cat "$GPU/mem_info_vram_used") / 1048576 )); total=$(( $(cat "$GPU/mem_info_vram_total") / 1048576 ))
+  free=$(( total - used ))
+  echo
+  echo "Now running: $new ($(get "$new" LABEL)), still under the name $(jq -r .model_alias <<<"$props")"
+  printf "  Server reports: %s agent slot(s), %'d tokens each\n" "$(jq -r .total_slots <<<"$props")" \
+    "$(jq -r .default_generation_settings.n_ctx <<<"$props")"
+  printf "  GPU memory: %'d of %'d MB used, %'d MB free (use grows a little as long prompts arrive)\n" "$used" "$total" "$free"
+  if [ "$free" -lt 1000 ]; then
+    echo "  !! Less than 1,000 MB free: lower CTX in $OPTIONS/$new.conf before relying on this option."
+  fi
+  if [ "$(get "$new" STATUS)" != tested ]; then
+    echo "  This option is an estimate. Run Test B (guide, Quick Start) before relying on it;"
+    echo "  when it passes, change STATUS to \"tested\" in $OPTIONS/$new.conf."
+  fi
+  hermes "$new" "$old"
+  echo
+}
+
+switch() {
+  local new=$1 old run n
+  check "$new" || exit 1
+  old=$(chosen); run=$(running)
+  if [ "$new" = "$run" ]; then
+    confirm "$new is already running. Restart it anyway?" || exit 0
+  fi
+  n=$(curl -s -m 5 "$URL/metrics" | awk '$1 == "llamacpp:requests_processing" {print $2 + 0}')
+  if [ "${n:-0}" -gt 0 ]; then
+    confirm "The server is working on $n request(s) right now (Hermes?). A restart cuts them off. Switch anyway?" || exit 0
+  fi
+  echo "Switching to $new ($(get "$new" LABEL)). The server is down while it restarts:"
+  echo "usually well under a minute, up to about 2 minutes if the old server is slow to stop."
+  sudo -v || { echo "No sudo, so nothing was changed."; exit 1; }
+
+  echo "$new" > "$OPTIONS/current"
+  if restart && { [ -n "$NOCHECK" ] || answer_check; }; then
+    report "$new" "$old"
+    exit 0
+  fi
+
+  echo
+  echo "!! $new did not start, or started but answered wrongly. The last lines of the server log:"
+  journalctl -u llama-server -n 20 --no-pager
+  echo
+  if [ -n "$old" ] && [ "$old" != "$new" ]; then
+    echo "Going back to $old."
+    echo "$old" > "$OPTIONS/current"
+    if restart && { [ -n "$NOCHECK" ] || answer_check; }; then
+      echo "Back on $old; the server is answering correctly. Nothing changes for Hermes."
+    else
+      echo "!! $old did not come back correctly either. See the guide: Quick Start, Example 7."
+    fi
+  else
+    echo "See the guide: Quick Start, Example 7."
+  fi
+  exit 1
+}
+
+YES=; NOCHECK=
+while [ "$1" = "-y" ] || [ "$1" = "--no-check" ]; do
+  [ "$1" = "-y" ] && YES=1; [ "$1" = "--no-check" ] && NOCHECK=1; shift
+done
+case "$1" in
+  ""|list)        list ;;
+  check)          answer_check ;;
+  show)           [ -n "$2" ] || { usage; exit 1; }
+                  check "$2" && show "$2" ;;
+  -h|--help|help) usage ;;
+  -*)             usage; exit 1 ;;
+  *)              switch "$1" ;;
+esac

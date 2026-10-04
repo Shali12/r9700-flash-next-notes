@@ -1,0 +1,10 @@
+# Goes in the config.yaml of a profile that talks to the rig directly (direct chat, Kanban).
+# context_length follows the server option: a little below the per-slot context.
+#   flash-next-q4-2x128k-plain, flash-next-q4-2x128k, flash-next-q4, flash-next: 125000
+#   flash-next-q4-2x64k: 62000      27b-q5xl: 82000
+model:
+  default: qwen3.8_local
+  provider: custom
+  base_url: http://RIG-ADDRESS:8080/v1
+  api_mode: chat_completions
+  context_length: 125000

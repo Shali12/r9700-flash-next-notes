@@ -1,0 +1,26 @@
+
+[a] "The capital of France is"
+    verdict: PASS   1 s
+    answer:
+      | Paris. The capital of Germany is Berlin. The capital of Italy is Rome. The capital of Spain is Madrid. The
+
+[b] Python: reverse a string
+    verdict: PASS   66 reply tokens, 72 prompt tokens, 3 s, finish: stop
+    thinking (start): We need to respond to user: "Write a Python function that reverses a string. Reply with the code in one Python code block." Need final with one Python code bloc
+    answer:
+      | ```python
+      | def reverse_string(s: str) -> str:
+      |     return s[::-1]
+      | ```
+
+[c] Summary of an 8k-token prompt
+    verdict: PASS   827 reply tokens, 7947 prompt tokens, 38 s, finish: stop; real identifiers named: llama_sampler_backend, llama_sampler_backend_support, llama_sampler_chain, llama_sampler_chain_i, llama_sampler_chain_init
+    thinking (start): We need answer user's request: "Here is the start of a C++ source file: ... Summarize in three sentences what this file is for, then list three functions that a
+    answer:
+      | This file implements the sampler subsystem for llama.cpp, providing utilities for manipulating token logits and probabilities. It defines a fixed-capacity ring buffer, partial sorting helpers, temperature and softmax transformations, and a generic sampler interface with chaining and backend support. It also includes logic for selecting sampled tokens from model outputs and managing sampler state across CPU and backend execution paths.
+      | 
+      | - `llama_sampler_init`
+      | - `llama_sampler_chain_init`
+      | - `llama_sampler_backend_support`
+
+=== teb-flash-next-q4-2x128k-plain: PASS (a ok, b ok, c ok); lowest available RAM 16562 MB, swap 311 MB; replies saved in check/teb-flash-next-q4-2x128k-plain/

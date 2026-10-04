@@ -1,0 +1,12 @@
+# Goes in the config.yaml of the PARENT profile (the one running the cloud model).
+# Children are sent straight to the rig's llama-server; no separate profile is needed for delegation.
+# Replace RIG-ADDRESS with the address your llama-server listens on.
+delegation:
+  model: qwen3.8_local            # the --alias every option on the rig is served under
+  base_url: http://RIG-ADDRESS:8080/v1
+  api_key: not-needed
+  api_mode: chat_completions
+  max_concurrent_children: 2      # must equal the server's number of slots (-np)
+  max_iterations: 60              # per-child tool-turn budget (docs default: 250)
+  # worktree_isolation: true      # each child gets its own git worktree (git repos, local terminal backend)
+  # child_timeout_seconds: 0      # default: no wall-clock cap; a stall monitor catches stuck children
